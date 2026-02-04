@@ -1,1 +1,2 @@
-/Users/alpandis/Documents/quarkus-asynchronous-design-pattern/src/test/java/org/acme/orders/api/OrderResourceTest.java
+/Users/alpandis/Documents/quarkus-asynchronous-design-pattern/src/test/java/org/acme/orders/bdd/OrderCucumberTest.java
+/Users/alpandis/Documents/quarkus-asynchronous-design-pattern/src/test/java/org/acme/orders/bdd/OrderSteps.java
