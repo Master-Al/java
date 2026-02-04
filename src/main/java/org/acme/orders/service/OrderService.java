@@ -1,19 +1,17 @@
 package org.acme.orders.service;
 
-import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 
 import org.acme.orders.model.OrderRequest;
 import org.acme.orders.model.OrderResult;
 import org.acme.orders.model.OrderStatus;
+import org.apache.camel.ProducerTemplate;
 
 @ApplicationScoped
 public class OrderService {
@@ -21,29 +19,17 @@ public class OrderService {
     private final ConcurrentMap<UUID, OrderStatus> statuses = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, OrderResult> results = new ConcurrentHashMap<>();
 
-    private final ExecutorService executor;
+    @Inject
+    ProducerTemplate producerTemplate;
 
     /**
-     * Creates a single background worker used for asynchronous order processing.
-     */
-    public OrderService() {
-        ThreadFactory factory = runnable -> {
-            Thread thread = new Thread(runnable);
-            thread.setName("order-worker");
-            thread.setDaemon(true);
-            return thread;
-        };
-        this.executor = Executors.newSingleThreadExecutor(factory);
-    }
-
-    /**
-     * Enqueues a new order and returns its job id immediately.
+     * Enqueues a new order into the Camel route and returns its job id immediately.
      */
     public UUID submit(OrderRequest request) {
         UUID jobId = UUID.randomUUID();
         statuses.put(jobId, OrderStatus.QUEUED);
 
-        executor.submit(() -> process(jobId, request));
+        producerTemplate.sendBodyAndHeader("seda:orders", request, "jobId", jobId);
         return jobId;
     }
 
@@ -62,30 +48,36 @@ public class OrderService {
     }
 
     /**
-     * Performs the actual business work on the background thread.
+     * Marks a job as processing.
      */
-    private void process(UUID jobId, OrderRequest request) {
-        try {
-            statuses.put(jobId, OrderStatus.PROCESSING);
-
-            OrderResult result = new OrderResult();
-            result.jobId = jobId;
-            result.totalPrice = request.quantity * request.unitPrice;
-            result.processedAt = Instant.now();
-            result.message = "Order processed for customer " + request.customerId;
-
-            results.put(jobId, result);
-            statuses.put(jobId, OrderStatus.COMPLETED);
-        } catch (Exception e) {
-            statuses.put(jobId, OrderStatus.FAILED);
-        }
+    public void markProcessing(UUID jobId) {
+        statuses.put(jobId, OrderStatus.PROCESSING);
     }
 
     /**
-     * Stops the background executor when the application is shutting down.
+     * Stores a completed result and marks the job completed.
      */
-    @PreDestroy
-    void shutdown() {
-        executor.shutdownNow();
+    public void complete(UUID jobId, OrderResult result) {
+        results.put(jobId, result);
+        statuses.put(jobId, OrderStatus.COMPLETED);
+    }
+
+    /**
+     * Marks a job as failed.
+     */
+    public void fail(UUID jobId) {
+        statuses.put(jobId, OrderStatus.FAILED);
+    }
+
+    /**
+     * Creates the order result for a given request.
+     */
+    public OrderResult buildResult(UUID jobId, OrderRequest request) {
+        OrderResult result = new OrderResult();
+        result.jobId = jobId;
+        result.totalPrice = request.quantity * request.unitPrice;
+        result.processedAt = Instant.now();
+        result.message = "Order processed for customer " + request.customerId;
+        return result;
     }
 }
