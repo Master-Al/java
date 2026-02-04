@@ -13,6 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @QuarkusTest
 public class OrderResourceTest {
 
+    /**
+     * Submits an order and verifies it is processed asynchronously end-to-end.
+     */
     @Test
     public void submitAndProcessOrder() {
         OrderRequest request = new OrderRequest();
@@ -44,6 +47,9 @@ public class OrderResourceTest {
                 .body("totalPrice", equalTo(20.0f));
     }
 
+    /**
+     * Polls the status endpoint until the job completes or a short timeout elapses.
+     */
     private String awaitCompleted(String jobId) {
         long deadline = System.currentTimeMillis() + 2000;
         String status = null;

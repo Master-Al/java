@@ -26,6 +26,9 @@ public class OrderResource {
     @Inject
     OrderService orderService;
 
+    /**
+     * Accepts an order and returns a job id immediately while processing happens in the background.
+     */
     @POST
     public Response submit(OrderRequest request) {
         UUID jobId = orderService.submit(request);
@@ -37,6 +40,9 @@ public class OrderResource {
         ).build();
     }
 
+    /**
+     * Returns the current processing status for a given job id.
+     */
     @GET
     @Path("/{id}/status")
     public Response status(@PathParam("id") UUID jobId) {
@@ -52,6 +58,9 @@ public class OrderResource {
         ).build();
     }
 
+    /**
+     * Returns the final result if finished; otherwise returns 202 with current status.
+     */
     @GET
     @Path("/{id}")
     public Response result(@PathParam("id") UUID jobId) {

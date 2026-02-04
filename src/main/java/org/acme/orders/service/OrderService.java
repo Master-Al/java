@@ -23,6 +23,9 @@ public class OrderService {
 
     private final ExecutorService executor;
 
+    /**
+     * Creates a single background worker used for asynchronous order processing.
+     */
     public OrderService() {
         ThreadFactory factory = runnable -> {
             Thread thread = new Thread(runnable);
@@ -33,6 +36,9 @@ public class OrderService {
         this.executor = Executors.newSingleThreadExecutor(factory);
     }
 
+    /**
+     * Enqueues a new order and returns its job id immediately.
+     */
     public UUID submit(OrderRequest request) {
         UUID jobId = UUID.randomUUID();
         statuses.put(jobId, OrderStatus.QUEUED);
@@ -41,14 +47,23 @@ public class OrderService {
         return jobId;
     }
 
+    /**
+     * Reads the current status for a job id.
+     */
     public OrderStatus getStatus(UUID jobId) {
         return statuses.get(jobId);
     }
 
+    /**
+     * Reads the result for a job id when processing has completed.
+     */
     public OrderResult getResult(UUID jobId) {
         return results.get(jobId);
     }
 
+    /**
+     * Performs the actual business work on the background thread.
+     */
     private void process(UUID jobId, OrderRequest request) {
         try {
             statuses.put(jobId, OrderStatus.PROCESSING);
@@ -66,6 +81,9 @@ public class OrderService {
         }
     }
 
+    /**
+     * Stops the background executor when the application is shutting down.
+     */
     @PreDestroy
     void shutdown() {
         executor.shutdownNow();
