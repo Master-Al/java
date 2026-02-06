@@ -12,9 +12,12 @@ import org.acme.orders.model.OrderRequest;
 import org.acme.orders.model.OrderResult;
 import org.acme.orders.model.OrderStatus;
 import org.apache.camel.ProducerTemplate;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class OrderService {
+
+    private static final Logger LOG = Logger.getLogger(OrderService.class);
 
     private final ConcurrentMap<UUID, OrderStatus> statuses = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, OrderResult> results = new ConcurrentHashMap<>();
@@ -29,6 +32,8 @@ public class OrderService {
         UUID jobId = UUID.randomUUID();
         statuses.put(jobId, OrderStatus.QUEUED);
 
+        LOG.infof("Queued order jobId=%s customer=%s item=%s quantity=%d",
+                jobId, request.customerId, request.item, request.quantity);
         producerTemplate.sendBodyAndHeader("seda:orders", request, "jobId", jobId);
         return jobId;
     }
@@ -52,6 +57,7 @@ public class OrderService {
      */
     public void markProcessing(UUID jobId) {
         statuses.put(jobId, OrderStatus.PROCESSING);
+        LOG.infof("Processing started jobId=%s", jobId);
     }
 
     /**
@@ -60,6 +66,7 @@ public class OrderService {
     public void complete(UUID jobId, OrderResult result) {
         results.put(jobId, result);
         statuses.put(jobId, OrderStatus.COMPLETED);
+        LOG.infof("Processing completed jobId=%s totalPrice=%.2f", jobId, result.totalPrice);
     }
 
     /**
@@ -67,6 +74,7 @@ public class OrderService {
      */
     public void fail(UUID jobId) {
         statuses.put(jobId, OrderStatus.FAILED);
+        LOG.warnf("Processing failed jobId=%s", jobId);
     }
 
     /**
@@ -78,6 +86,7 @@ public class OrderService {
         result.totalPrice = request.quantity * request.unitPrice;
         result.processedAt = Instant.now();
         result.message = "Order processed for customer " + request.customerId;
+        LOG.debugf("Result built jobId=%s totalPrice=%.2f", jobId, result.totalPrice);
         return result;
     }
 }

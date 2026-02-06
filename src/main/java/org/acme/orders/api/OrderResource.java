@@ -17,11 +17,14 @@ import org.acme.orders.model.OrderRequest;
 import org.acme.orders.model.OrderResult;
 import org.acme.orders.model.OrderStatus;
 import org.acme.orders.service.OrderService;
+import org.jboss.logging.Logger;
 
 @Path("/orders")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class OrderResource {
+
+    private static final Logger LOG = Logger.getLogger(OrderResource.class);
 
     @Inject
     OrderService orderService;
@@ -31,7 +34,10 @@ public class OrderResource {
      */
     @POST
     public Response submit(OrderRequest request) {
+        LOG.infof("Received order submission for customer=%s item=%s quantity=%d",
+                request.customerId, request.item, request.quantity);
         UUID jobId = orderService.submit(request);
+        LOG.infof("Accepted order jobId=%s", jobId);
         return Response.accepted(
                 Map.of(
                         "jobId", jobId.toString(),
@@ -48,8 +54,10 @@ public class OrderResource {
     public Response status(@PathParam("id") UUID jobId) {
         OrderStatus status = orderService.getStatus(jobId);
         if (status == null) {
+            LOG.warnf("Status requested for unknown jobId=%s", jobId);
             return Response.status(Response.Status.NOT_FOUND).build();
         }
+        LOG.infof("Status requested for jobId=%s status=%s", jobId, status);
         return Response.ok(
                 Map.of(
                         "jobId", jobId.toString(),
@@ -66,14 +74,17 @@ public class OrderResource {
     public Response result(@PathParam("id") UUID jobId) {
         OrderResult result = orderService.getResult(jobId);
         if (result != null) {
+            LOG.infof("Result returned for jobId=%s totalPrice=%.2f", jobId, result.totalPrice);
             return Response.ok(result).build();
         }
 
         OrderStatus status = orderService.getStatus(jobId);
         if (status == null) {
+            LOG.warnf("Result requested for unknown jobId=%s", jobId);
             return Response.status(Response.Status.NOT_FOUND).build();
         }
 
+        LOG.infof("Result requested for jobId=%s but status=%s", jobId, status);
         return Response.status(Response.Status.ACCEPTED)
                 .entity(
                         Map.of(

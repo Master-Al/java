@@ -9,9 +9,12 @@ import org.acme.orders.model.OrderRequest;
 import org.acme.orders.model.OrderResult;
 import org.acme.orders.service.OrderService;
 import org.apache.camel.builder.RouteBuilder;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class OrderRoute extends RouteBuilder {
+
+    private static final Logger LOG = Logger.getLogger(OrderRoute.class);
 
     @Inject
     OrderService orderService;
@@ -28,14 +31,17 @@ public class OrderRoute extends RouteBuilder {
                     OrderRequest request = exchange.getIn().getBody(OrderRequest.class);
 
                     if (jobId == null || request == null) {
+                        LOG.warn("Skipping order message missing jobId or request body");
                         return;
                     }
 
                     try {
+                        LOG.infof("Route received jobId=%s", jobId);
                         orderService.markProcessing(jobId);
                         OrderResult result = orderService.buildResult(jobId, request);
                         orderService.complete(jobId, result);
                     } catch (Exception e) {
+                        LOG.errorf(e, "Route failed jobId=%s", jobId);
                         orderService.fail(jobId);
                     }
                 });
