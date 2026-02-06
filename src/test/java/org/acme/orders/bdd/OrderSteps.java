@@ -5,6 +5,7 @@ import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import io.restassured.http.ContentType;
 import org.acme.orders.model.OrderRequest;
+import org.jboss.logging.Logger;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OrderSteps {
+
+    private static final Logger LOG = Logger.getLogger(OrderSteps.class);
 
     private OrderRequest request;
     private String jobId;
@@ -27,6 +30,8 @@ public class OrderSteps {
         request.item = item;
         request.quantity = quantity;
         request.unitPrice = unitPrice;
+        LOG.infof("BDD build order customer=%s item=%s quantity=%d unitPrice=%.2f",
+                customerId, item, quantity, unitPrice);
     }
 
     /**
@@ -44,6 +49,7 @@ public class OrderSteps {
                 .extract()
                 .path("jobId");
 
+        LOG.infof("BDD submitted order jobId=%s", jobId);
         initialStatus = given()
                 .when()
                 .get("/orders/{id}/status", jobId)
@@ -51,6 +57,7 @@ public class OrderSteps {
                 .statusCode(200)
                 .extract()
                 .path("status");
+        LOG.infof("BDD initial status jobId=%s status=%s", jobId, initialStatus);
     }
 
     /**
@@ -61,6 +68,7 @@ public class OrderSteps {
         assertNotNull(jobId);
         boolean accepted = "QUEUED".equals(initialStatus) || "PROCESSING".equals(initialStatus) || "COMPLETED".equals(initialStatus);
         assertTrue(accepted, "Expected initial status to be QUEUED/PROCESSING/COMPLETED but was " + initialStatus);
+        LOG.infof("BDD submission accepted jobId=%s status=%s", jobId, initialStatus);
     }
 
     /**
@@ -70,6 +78,7 @@ public class OrderSteps {
     public void statusEventuallyEquals(String expectedStatus) {
         String status = awaitStatus(expectedStatus);
         assertEquals(expectedStatus, status);
+        LOG.infof("BDD status reached jobId=%s status=%s", jobId, status);
     }
 
     /**
@@ -84,6 +93,7 @@ public class OrderSteps {
                 .statusCode(200)
                 .body("jobId", equalTo(jobId))
                 .body("totalPrice", equalTo((float) expectedTotal));
+        LOG.infof("BDD total price validated jobId=%s totalPrice=%.2f", jobId, expectedTotal);
     }
 
     /**
@@ -110,6 +120,7 @@ public class OrderSteps {
                 break;
             }
         }
+        LOG.warnf("BDD status timeout jobId=%s expected=%s last=%s", jobId, expectedStatus, status);
         return status;
     }
 }
