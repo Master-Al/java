@@ -80,7 +80,8 @@ public class OrderSteps {
     @Then("the submission is accepted")
     public void submissionAccepted() {
         assertNotNull(jobId);
-        assertTrue(routeNotify.matches(2000), "Expected Camel route 'order-processor' to process the message");
+        assertTrue(routeNotify.matches(2, java.util.concurrent.TimeUnit.SECONDS),
+                "Expected Camel route 'order-processor' to process the message");
         boolean accepted = "QUEUED".equals(initialStatus) || "PROCESSING".equals(initialStatus) || "COMPLETED".equals(initialStatus);
         assertTrue(accepted, "Expected initial status to be QUEUED/PROCESSING/COMPLETED but was " + initialStatus);
         LOG.infof("BDD submission accepted jobId=%s status=%s", jobId, initialStatus);
