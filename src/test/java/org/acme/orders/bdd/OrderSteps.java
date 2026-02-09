@@ -4,10 +4,13 @@ import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
 import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import org.acme.orders.model.OrderRequest;
+import org.apache.camel.CamelContext;
+import org.apache.camel.builder.NotifyBuilder;
 import org.jboss.logging.Logger;
+import jakarta.inject.Inject;
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,9 +19,13 @@ public class OrderSteps {
 
     private static final Logger LOG = Logger.getLogger(OrderSteps.class);
 
+    @Inject
+    CamelContext camelContext;
+
     private OrderRequest request;
     private String jobId;
     private String initialStatus;
+    private NotifyBuilder routeNotify;
 
     /**
      * Builds an order request that will be submitted in later steps.
@@ -39,24 +46,31 @@ public class OrderSteps {
      */
     @When("the client submits the order")
     public void submitOrder() {
-        jobId = given()
+        routeNotify = new NotifyBuilder(camelContext)
+                .fromRoute("order-processor")
+                .whenCompleted(1)
+                .create();
+
+        Response response = given()
                 .contentType(ContentType.JSON)
                 .body(request)
                 .when()
                 .post("/orders")
                 .then()
-                .statusCode(202)
                 .extract()
-                .path("jobId");
+                .response();
+        assertEquals(202, response.statusCode());
+        jobId = response.path("jobId");
 
         LOG.infof("BDD submitted order jobId=%s", jobId);
-        initialStatus = given()
+        Response statusResponse = given()
                 .when()
                 .get("/orders/{id}/status", jobId)
                 .then()
-                .statusCode(200)
                 .extract()
-                .path("status");
+                .response();
+        assertEquals(200, statusResponse.statusCode());
+        initialStatus = statusResponse.path("status");
         LOG.infof("BDD initial status jobId=%s status=%s", jobId, initialStatus);
     }
 
@@ -66,6 +80,7 @@ public class OrderSteps {
     @Then("the submission is accepted")
     public void submissionAccepted() {
         assertNotNull(jobId);
+        assertTrue(routeNotify.matches(2000), "Expected Camel route 'order-processor' to process the message");
         boolean accepted = "QUEUED".equals(initialStatus) || "PROCESSING".equals(initialStatus) || "COMPLETED".equals(initialStatus);
         assertTrue(accepted, "Expected initial status to be QUEUED/PROCESSING/COMPLETED but was " + initialStatus);
         LOG.infof("BDD submission accepted jobId=%s status=%s", jobId, initialStatus);
@@ -86,13 +101,17 @@ public class OrderSteps {
      */
     @Then("the total price is {double}")
     public void totalPriceIs(double expectedTotal) {
-        given()
+        Response resultResponse = given()
                 .when()
                 .get("/orders/{id}", jobId)
                 .then()
-                .statusCode(200)
-                .body("jobId", equalTo(jobId))
-                .body("totalPrice", equalTo((float) expectedTotal));
+                .extract()
+                .response();
+        assertEquals(200, resultResponse.statusCode());
+        assertEquals(jobId, resultResponse.path("jobId"));
+        Float totalPrice = resultResponse.path("totalPrice");
+        assertNotNull(totalPrice);
+        assertEquals((float) expectedTotal, totalPrice);
         LOG.infof("BDD total price validated jobId=%s totalPrice=%.2f", jobId, expectedTotal);
     }
 
@@ -103,13 +122,14 @@ public class OrderSteps {
         long deadline = System.currentTimeMillis() + 2000;
         String status = null;
         while (System.currentTimeMillis() < deadline) {
-            status = given()
+            Response statusResponse = given()
                     .when()
                     .get("/orders/{id}/status", jobId)
                     .then()
-                    .statusCode(200)
                     .extract()
-                    .path("status");
+                    .response();
+            assertEquals(200, statusResponse.statusCode());
+            status = statusResponse.path("status");
             if (expectedStatus.equals(status)) {
                 return status;
             }
