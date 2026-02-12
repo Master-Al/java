@@ -26,6 +26,13 @@ public class OrderService {
     ProducerTemplate producerTemplate;
 
     /**
+     * Allows tests to supply a ProducerTemplate without CDI.
+     */
+    public void setProducerTemplate(ProducerTemplate producerTemplate) {
+        this.producerTemplate = producerTemplate;
+    }
+
+    /**
      * Enqueues a new order into the Camel route and returns its job id immediately.
      */
     public UUID submit(OrderRequest request) {

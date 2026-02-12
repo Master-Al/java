@@ -7,7 +7,7 @@ This project demonstrates a simple asynchronous processing flow in Quarkus using
 ```mermaid
 sequenceDiagram
     participant C as "Cucumber Step"
-    participant API as "OrderResource"
+    participant API as "OrderRestRoute"
     participant S as "OrderService"
     participant Q as "Camel SEDA Queue"
     participant R as "OrderRoute"

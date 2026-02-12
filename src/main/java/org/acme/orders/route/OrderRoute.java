@@ -16,8 +16,12 @@ public class OrderRoute extends RouteBuilder {
 
     private static final Logger LOG = Logger.getLogger(OrderRoute.class);
 
+    private final OrderService orderService;
+
     @Inject
-    OrderService orderService;
+    public OrderRoute(OrderService orderService) {
+        this.orderService = orderService;
+    }
 
     /**
      * Defines the asynchronous Camel route that processes orders from the queue.

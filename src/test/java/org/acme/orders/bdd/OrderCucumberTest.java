@@ -1,6 +1,7 @@
 package org.acme.orders.bdd;
 
-import io.quarkiverse.cucumber.CucumberQuarkusTest;
+import io.cucumber.junit.platform.engine.Cucumber;
 
-public class OrderCucumberTest extends CucumberQuarkusTest {
+@Cucumber
+public class OrderCucumberTest {
 }

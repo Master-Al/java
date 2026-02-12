@@ -1,16 +1,24 @@
 package org.acme.orders.bdd;
 
+import io.cucumber.java.After;
+import io.cucumber.java.Before;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
-import io.restassured.http.ContentType;
-import io.restassured.response.Response;
 import org.acme.orders.model.OrderRequest;
+import org.acme.orders.model.OrderResult;
+import org.acme.orders.model.OrderStatus;
+import org.acme.orders.route.OrderRoute;
+import org.acme.orders.service.OrderService;
 import org.apache.camel.CamelContext;
+import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.NotifyBuilder;
+import org.apache.camel.impl.DefaultCamelContext;
 import org.jboss.logging.Logger;
-import jakarta.inject.Inject;
-import static io.restassured.RestAssured.given;
+
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,13 +27,45 @@ public class OrderSteps {
 
     private static final Logger LOG = Logger.getLogger(OrderSteps.class);
 
-    @Inject
-    CamelContext camelContext;
+    private CamelContext camelContext;
+    private ProducerTemplate producerTemplate;
+    private OrderService orderService;
+    private NotifyBuilder routeNotify;
 
     private OrderRequest request;
-    private String jobId;
-    private String initialStatus;
-    private NotifyBuilder routeNotify;
+    private UUID jobId;
+    private OrderStatus initialStatus;
+
+    /**
+     * Starts a local Camel context and registers the seda route for unit testing.
+     */
+    @Before
+    public void startCamel() throws Exception {
+        camelContext = new DefaultCamelContext();
+        producerTemplate = camelContext.createProducerTemplate();
+
+        orderService = new OrderService();
+        orderService.setProducerTemplate(producerTemplate);
+
+        camelContext.addRoutes(new OrderRoute(orderService));
+        camelContext.start();
+        producerTemplate.start();
+        LOG.info("BDD Camel context started");
+    }
+
+    /**
+     * Stops the Camel context after each scenario.
+     */
+    @After
+    public void stopCamel() throws Exception {
+        if (camelContext != null) {
+            if (producerTemplate != null) {
+                producerTemplate.stop();
+            }
+            camelContext.stop();
+            LOG.info("BDD Camel context stopped");
+        }
+    }
 
     /**
      * Builds an order request that will be submitted in later steps.
@@ -42,7 +82,7 @@ public class OrderSteps {
     }
 
     /**
-     * Submits the order to the REST endpoint and stores the returned job id.
+     * Submits the order into the seda:orders route and stores the returned job id.
      */
     @When("the client submits the order")
     public void submitOrder() {
@@ -51,38 +91,24 @@ public class OrderSteps {
                 .whenCompleted(1)
                 .create();
 
-        Response response = given()
-                .contentType(ContentType.JSON)
-                .body(request)
-                .when()
-                .post("/orders")
-                .then()
-                .extract()
-                .response();
-        assertEquals(202, response.statusCode());
-        jobId = response.path("jobId");
+        jobId = orderService.submit(request);
+        initialStatus = orderService.getStatus(jobId);
 
         LOG.infof("BDD submitted order jobId=%s", jobId);
-        Response statusResponse = given()
-                .when()
-                .get("/orders/{id}/status", jobId)
-                .then()
-                .extract()
-                .response();
-        assertEquals(200, statusResponse.statusCode());
-        initialStatus = statusResponse.path("status");
         LOG.infof("BDD initial status jobId=%s status=%s", jobId, initialStatus);
     }
 
     /**
-     * Verifies the submission was accepted and a job id was generated.
+     * Verifies the submission was accepted and the route processed the exchange.
      */
     @Then("the submission is accepted")
     public void submissionAccepted() {
         assertNotNull(jobId);
-        assertTrue(routeNotify.matches(2, java.util.concurrent.TimeUnit.SECONDS),
+        assertTrue(routeNotify.matches(2, TimeUnit.SECONDS),
                 "Expected Camel route 'order-processor' to process the message");
-        boolean accepted = "QUEUED".equals(initialStatus) || "PROCESSING".equals(initialStatus) || "COMPLETED".equals(initialStatus);
+        boolean accepted = OrderStatus.QUEUED.equals(initialStatus)
+                || OrderStatus.PROCESSING.equals(initialStatus)
+                || OrderStatus.COMPLETED.equals(initialStatus);
         assertTrue(accepted, "Expected initial status to be QUEUED/PROCESSING/COMPLETED but was " + initialStatus);
         LOG.infof("BDD submission accepted jobId=%s status=%s", jobId, initialStatus);
     }
@@ -92,8 +118,8 @@ public class OrderSteps {
      */
     @Then("eventually the order status is {word}")
     public void statusEventuallyEquals(String expectedStatus) {
-        String status = awaitStatus(expectedStatus);
-        assertEquals(expectedStatus, status);
+        OrderStatus status = awaitStatus(OrderStatus.valueOf(expectedStatus));
+        assertEquals(expectedStatus, status.name());
         LOG.infof("BDD status reached jobId=%s status=%s", jobId, status);
     }
 
@@ -102,35 +128,21 @@ public class OrderSteps {
      */
     @Then("the total price is {double}")
     public void totalPriceIs(double expectedTotal) {
-        Response resultResponse = given()
-                .when()
-                .get("/orders/{id}", jobId)
-                .then()
-                .extract()
-                .response();
-        assertEquals(200, resultResponse.statusCode());
-        assertEquals(jobId, resultResponse.path("jobId"));
-        Float totalPrice = resultResponse.path("totalPrice");
-        assertNotNull(totalPrice);
-        assertEquals((float) expectedTotal, totalPrice);
+        OrderResult result = awaitResult();
+        assertNotNull(result);
+        assertEquals(jobId, result.jobId);
+        assertEquals(expectedTotal, result.totalPrice, 0.001);
         LOG.infof("BDD total price validated jobId=%s totalPrice=%.2f", jobId, expectedTotal);
     }
 
     /**
      * Waits briefly for the order status to match the expected value.
      */
-    private String awaitStatus(String expectedStatus) {
+    private OrderStatus awaitStatus(OrderStatus expectedStatus) {
         long deadline = System.currentTimeMillis() + 2000;
-        String status = null;
+        OrderStatus status = null;
         while (System.currentTimeMillis() < deadline) {
-            Response statusResponse = given()
-                    .when()
-                    .get("/orders/{id}/status", jobId)
-                    .then()
-                    .extract()
-                    .response();
-            assertEquals(200, statusResponse.statusCode());
-            status = statusResponse.path("status");
+            status = orderService.getStatus(jobId);
             if (expectedStatus.equals(status)) {
                 return status;
             }
@@ -143,5 +155,26 @@ public class OrderSteps {
         }
         LOG.warnf("BDD status timeout jobId=%s expected=%s last=%s", jobId, expectedStatus, status);
         return status;
+    }
+
+    /**
+     * Waits briefly for the order result to be available.
+     */
+    private OrderResult awaitResult() {
+        long deadline = System.currentTimeMillis() + 2000;
+        OrderResult result = null;
+        while (System.currentTimeMillis() < deadline) {
+            result = orderService.getResult(jobId);
+            if (result != null) {
+                return result;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        return result;
     }
 }

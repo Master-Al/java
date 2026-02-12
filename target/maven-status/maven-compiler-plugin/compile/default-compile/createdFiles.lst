@@ -1,6 +1,0 @@
-org/acme/orders/route/OrderRoute.class
-org/acme/orders/service/OrderService.class
-org/acme/orders/model/OrderStatus.class
-org/acme/orders/api/OrderResource.class
-org/acme/orders/model/OrderRequest.class
-org/acme/orders/model/OrderResult.class
